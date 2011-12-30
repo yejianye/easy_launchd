@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+from optparse import OptionParser
+import re
+
+boilplate_template = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+%s
+</dict>
+</plist>
+'''
+
+USER_AGENT = 0
+SYS_AGENT = 1
+SYS_DAEMON = 2
+
+def add_string_key(key, val):
+	return '<key>%s</key>\n<string>%s</string>\n' % (key, val)
+
+def add_bool_key(key, val):
+	return '<key>%s</key>\n<%s/>\n' % (key, val and 'true' or 'false')
+
+def add_array_key(key, array, indent='\t'):
+	result = "<key>%s</key>\n<array>\n"
+	result = '\n'.join((indent + "<string>%s</string>" % x) for x in array)
+	result += "\n</array>\n"
+	return result
+
+def add_indent(text, indent='\t'):
+	return '\n'.join((indent + l) for l in text.split('\n'))
+
+def split_program_arguments(command):
+	def tokens(command):
+		token_regex = re.compile("'.*?'|".*?"|[^ ]+")
+		while command:
+			token_match = token_regex.match(command)
+			token = token_match.group()
+			yield token
+			command = re.sub('^\s*', '', command[len(token):]
+	return [t for t in tokens(command)]
+
+def parser_and_usage():
+	usage = '''usage: %prog --label=LABEL --program=PROGRAM [options]
+		A script to create jobs for launchd. A plist file will be generated and the job will loaded into launchd after creation.
+	'''
+	parser = OptionParser(usage=usage)
+	parser.add_option('--label', dest='label', 
+		help='Unique identifier of the job to launchd')
+
+	parser.add_option('--program', dest='prog_args', 
+		help='The program and its augments to launch the job')
+
+	parser.add_option('--keepalive' , action='store_true', dest='keepalive', default=True, 
+		help='Keep the daemon alive. Default is True')
+	parser.add_option('--no-keepalive' , action='store_false', dest='keepalive')
+
+	parser.add_option('--runatload' , action='store_true', dest='run_at_load', default=True, 
+		help='Launch your job once at the time the job is loaded.')
+
+	parser.add_option('--user-agent', action='store_const', const=USER_AGENT, dest='job_type', default=SYS_AGENT, 
+		help='Per-user agent provided by the user')
+	parser.add_option('--sys-agent', action='store_const', const=SYS_AGENT, dest='job_type', 
+		help="Per-user agent provided by the administrator. 'sudo' is required.")
+	parser.add_option('--sys-daemon', action='store_const', const=SYS_DAEMON, dest='job_type', 
+		help="System-wide daemons provided by the administrator. 'sudo' is required.")
+
+	option, args = parser.parse_args()
+	if not option.label or not option.program:
+		print "'--label' and '--program' is required to generate the job. Use '--help' to see the usage."
+		exit(1)
+	return option
+
+def generate_plist(option):
+	content = add_string_key('Label', option.label)
+	content += add_array_key('ProgramArguments', option.prog_args.split(' '))
+	if option.keepalive:
+		content += add_bool_key('KeepAlive', option.keepalive)
+	if option.run_at_load:
+		content += add_bool_key('RunAtLoad', option.run_at_load)
+	content = boilplate_template % add_indent(content)
+	print content
+	return content
+
+option = parser_and_usage()
+generate_plist(option)
+
