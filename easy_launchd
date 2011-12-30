@@ -54,9 +54,9 @@ def split_program_arguments(command):
 
 
 def parser_and_usage():
-	usage = '''usage: %prog --label=LABEL --program=PROGRAM [options]
-		A script to create jobs for launchd. A plist file will be generated and the job will loaded into launchd after creation.
-	'''
+	usage = '''%prog --label=LABEL --program=PROGRAM [options]
+
+A script to create jobs for launchd. A plist file will be generated and the job will loaded into launchd after creation.'''
 	parser = OptionParser(usage=usage)
 	parser.add_option('--label', dest='label', 
 		help='Unique identifier of the job to launchd')
