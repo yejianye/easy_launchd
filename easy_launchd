@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from optparse import OptionParser
 import re
+import os
 
 boilplate_template = '''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
@@ -23,8 +24,8 @@ def add_bool_key(key, val):
 	return '<key>%s</key>\n<%s/>\n' % (key, val and 'true' or 'false')
 
 def add_array_key(key, array, indent='\t'):
-	result = "<key>%s</key>\n<array>\n"
-	result = '\n'.join((indent + "<string>%s</string>" % x) for x in array)
+	result = "<key>%s</key>\n<array>\n" % key
+	result += '\n'.join((indent + "<string>%s</string>" % x) for x in array)
 	result += "\n</array>\n"
 	return result
 
@@ -33,13 +34,24 @@ def add_indent(text, indent='\t'):
 
 def split_program_arguments(command):
 	def tokens(command):
-		token_regex = re.compile("'.*?'|".*?"|[^ ]+")
-		while command:
-			token_match = token_regex.match(command)
-			token = token_match.group()
+		command = command.strip()
+		token = ''
+		quote = None
+		for ch in command:	
+			space = ch.isspace()
+			if quote or not space:
+				token += ch
+			elif token and space:
+				yield token
+				token = ''
+			if quote and ch == quote:
+				quote = None
+			elif not quote and ch in ["'", '"']:
+				quote = ch
+		if token:
 			yield token
-			command = re.sub('^\s*', '', command[len(token):]
 	return [t for t in tokens(command)]
+
 
 def parser_and_usage():
 	usage = '''usage: %prog --label=LABEL --program=PROGRAM [options]
@@ -49,14 +61,14 @@ def parser_and_usage():
 	parser.add_option('--label', dest='label', 
 		help='Unique identifier of the job to launchd')
 
-	parser.add_option('--program', dest='prog_args', 
+	parser.add_option('--command', dest='prog_args', 
 		help='The program and its augments to launch the job')
 
-	parser.add_option('--keepalive' , action='store_true', dest='keepalive', default=True, 
+	parser.add_option('--keepalive' , action='store_true', dest='keepalive', default=False, 
 		help='Keep the daemon alive. Default is True')
 	parser.add_option('--no-keepalive' , action='store_false', dest='keepalive')
 
-	parser.add_option('--runatload' , action='store_true', dest='run_at_load', default=True, 
+	parser.add_option('--runatload' , action='store_true', dest='run_at_load', default=False, 
 		help='Launch your job once at the time the job is loaded.')
 
 	parser.add_option('--user-agent', action='store_const', const=USER_AGENT, dest='job_type', default=SYS_AGENT, 
@@ -67,7 +79,7 @@ def parser_and_usage():
 		help="System-wide daemons provided by the administrator. 'sudo' is required.")
 
 	option, args = parser.parse_args()
-	if not option.label or not option.program:
+	if not option.label or not option.prog_args:
 		print "'--label' and '--program' is required to generate the job. Use '--help' to see the usage."
 		exit(1)
 	return option
@@ -79,10 +91,23 @@ def generate_plist(option):
 		content += add_bool_key('KeepAlive', option.keepalive)
 	if option.run_at_load:
 		content += add_bool_key('RunAtLoad', option.run_at_load)
-	content = boilplate_template % add_indent(content)
+	content = boilplate_template % add_indent(content.strip('\n'))
 	print content
+	# dest directory
+	if option.job_type == USER_AGENT:
+		path = os.environ['HOME'] + '/Library/LaunchAgents'
+	elif option.job_type == SYS_AGENT:
+		path = '/Library/LaunchAgents'
+	elif option.job_type == SYS_DAEMON:
+		path = '/Library/LaunchDaemons'
+	plist_filename = '%s/%s.plist' % (path, option.label)
+	plist = open(plist_filename, 'w')
+	plist.write(content)
+	plist.close()
+	print 'written to %s.' % plist_filename
+	# load plist file
+	os.system('launchctl load %s' % plist_filename)
 	return content
 
 option = parser_and_usage()
 generate_plist(option)
-
